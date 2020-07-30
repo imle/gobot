@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,6 +72,7 @@ type Client struct {
 	ConnectTimeout  time.Duration
 	initFunc        func() error
 	initMutex       sync.Mutex
+	digitalPinState [8]byte
 	gobot.Eventer
 }
 
@@ -249,17 +249,16 @@ func (b *Client) SetPinMode(pin int, mode int) error {
 
 // DigitalWrite writes value to pin.
 func (b *Client) DigitalWrite(pin int, value int) error {
-	port := byte(math.Floor(float64(pin) / 8))
-	portValue := byte(0)
+	port := (pin / 8) & 0x7F
+	portData := &b.digitalPinState[port]
+	pin = pin % 8
 
-	b.pins[pin].Value = value
-
-	for i := byte(0); i < 8; i++ {
-		if b.pins[8*port+i].Value != 0 {
-			portValue = portValue | (1 << i)
-		}
+	if value > 0 {
+		*portData = (*portData) | (1 << pin)
+	} else {
+		*portData = (*portData) & ^(1 << pin)
 	}
-	return b.write([]byte{DigitalMessage | port, portValue & 0x7F, (portValue >> 7) & 0x7F})
+	return b.write([]byte{DigitalMessage | byte(port), *portData & 0x7F, (*portData >> 7) & 0x7F})
 }
 
 // ServoConfig sets the min and max pulse width for servo PWM range
